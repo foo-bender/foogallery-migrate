@@ -23,6 +23,7 @@ class WpPhotoAlbumPlusPluginTest extends TestCase {
 		$GLOBALS['foogallery_migrate_test_post_meta'] = array();
 		$GLOBALS['foogallery_migrate_test_imported_attachments'] = array();
 		$GLOBALS['foogallery_migrate_test_attachment_url_to_postid'] = array();
+		$_POST = array();
 		$GLOBALS['foogallery_migrate_engine_instance'] = new MigratorEngine();
 		$GLOBALS['wpdb'] = new FakeWpPhotoAlbumPlusWpdb();
 	}
