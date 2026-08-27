@@ -2,6 +2,7 @@
 
 namespace FooPlugins\FooGalleryMigrate\Tests;
 
+use FooPlugins\FooGalleryMigrate\Init;
 use FooPlugins\FooGalleryMigrate\MigratorEngine;
 use FooPlugins\FooGalleryMigrate\Migrators\ContentMigrator;
 use FooPlugins\FooGalleryMigrate\Objects\Album;
@@ -45,6 +46,34 @@ class WpPhotoAlbumPlusPluginTest extends TestCase {
 		$this->assertStringContainsString( 'new \\FooPlugins\\FooGalleryMigrate\\Plugins\\WpPhotoAlbumPlus()', $registry_source );
 	}
 
+	public function test_ajax_title_lookup_accepts_php_normalized_wppa_field_names(): void {
+		parse_str(
+			http_build_query( array( 'foogallery-title-gallery_WP Photo Album Plus_4' => 'Renamed WPPA Gallery' ) ),
+			$_POST
+		);
+		$init = ( new \ReflectionClass( Init::class ) )->newInstanceWithoutConstructor();
+		$method = new \ReflectionMethod( $init, 'get_migration_title_from_request' );
+
+		$this->assertSame(
+			'Renamed WPPA Gallery',
+			$method->invoke( $init, 'gallery_WP Photo Album Plus_4' )
+		);
+	}
+
+	public function test_ajax_album_title_lookup_accepts_php_normalized_wppa_field_names(): void {
+		parse_str(
+			http_build_query( array( 'foogallery-album-title-album_WP Photo Album Plus_3' => 'Renamed WPPA Album' ) ),
+			$_POST
+		);
+		$init = ( new \ReflectionClass( Init::class ) )->newInstanceWithoutConstructor();
+		$method = new \ReflectionMethod( $init, 'get_migration_title_from_request' );
+
+		$this->assertSame(
+			'Renamed WPPA Album',
+			$method->invoke( $init, 'album_WP Photo Album Plus_3', 'foogallery-album-title-' )
+		);
+	}
+
 	public function test_detection_requires_both_exact_current_site_tables_when_inactive(): void {
 		$plugin = new WpPhotoAlbumPlus();
 		$wpdb = $GLOBALS['wpdb'];
@@ -81,7 +110,7 @@ class WpPhotoAlbumPlusPluginTest extends TestCase {
 	 * @preserveGlobalState disabled
 	 */
 	public function test_active_wppa_upload_constants_are_used_for_local_sources(): void {
-		$upload_path = '/home/brad/.cache/wppa-active-upload-test';
+		$upload_path = $this->test_upload_dir() . '/wppa-active-upload-test';
 		define( 'WPPA_ALBUMS', 'network_wppa_albums' );
 		define( 'WPPA_PHOTOS', 'network_wppa_photos' );
 		define( 'WPPA_UPLOAD_PATH', $upload_path );
@@ -90,7 +119,7 @@ class WpPhotoAlbumPlusPluginTest extends TestCase {
 			mkdir( $upload_path, 0777, true );
 		}
 		$this->create_photo_file( '601.jpg' );
-		file_put_contents( $upload_path . '/601.jpg', file_get_contents( '/tmp/uploads/wppa/601.jpg' ) );
+		file_put_contents( $upload_path . '/601.jpg', file_get_contents( $this->test_upload_dir() . '/wppa/601.jpg' ) );
 
 		$GLOBALS['foogallery_migrate_test_options'] = array( 'wppa_file_system' => 'flat' );
 		$GLOBALS['foogallery_migrate_engine_instance'] = new MigratorEngine();
@@ -151,13 +180,15 @@ class WpPhotoAlbumPlusPluginTest extends TestCase {
 		$this->create_photo_file( '112.jpg' );
 		$this->create_photo_file( '801.jpg' );
 		$this->create_photo_file( '901.jpg' );
-		$malformed_file = '/tmp/uploads/wppa/113.jpg';
+		$wppa_directory = $this->test_upload_dir() . '/wppa';
+		$malformed_file = $wppa_directory . '/113.jpg';
 		file_put_contents( $malformed_file, 'not an image' );
 		$this->created_files[] = $malformed_file;
-		$outside_file = '/home/brad/.cache/wppa-outside-image.jpg';
+		$outside_file = dirname( $this->test_upload_dir() ) . '/wppa-outside-image.jpg';
+		$escaped_symlink = $wppa_directory . '/111.jpg';
 		file_put_contents( $outside_file, 'outside synthetic fixture' );
-		symlink( $outside_file, '/tmp/uploads/wppa/111.jpg' );
-		$this->created_files[] = '/tmp/uploads/wppa/111.jpg';
+		symlink( $outside_file, $escaped_symlink );
+		$this->created_files[] = $escaped_symlink;
 		$this->created_files[] = $outside_file;
 
 		$galleries = $plugin->find_galleries();
@@ -454,7 +485,7 @@ class WpPhotoAlbumPlusPluginTest extends TestCase {
 	}
 
 	private function create_photo_file( string $relative_path ): void {
-		$file = '/tmp/uploads/wppa/' . $relative_path;
+		$file = $this->test_upload_dir() . '/wppa/' . $relative_path;
 		$directory = dirname( $file );
 		if ( ! is_dir( $directory ) ) {
 			mkdir( $directory, 0777, true );
@@ -470,6 +501,15 @@ class WpPhotoAlbumPlusPluginTest extends TestCase {
 		$data = isset( $fixtures[ $extension ] ) ? base64_decode( $fixtures[ $extension ] ) : 'synthetic non-image fixture';
 		file_put_contents( $file, $data );
 		$this->created_files[] = $file;
+	}
+
+	private function test_upload_dir(): string {
+		$environment_basedir = getenv( 'FOOGALLERY_MIGRATE_TEST_UPLOAD_DIR' );
+		$basedir = isset( $GLOBALS['foogallery_migrate_test_upload_dir'] )
+			? $GLOBALS['foogallery_migrate_test_upload_dir']
+			: ( is_string( $environment_basedir ) && '' !== $environment_basedir ? $environment_basedir : '/tmp/uploads' );
+
+		return rtrim( (string) $basedir, '/\\' );
 	}
 
 	private function extract_shortcode_id( string $content, WpPhotoAlbumPlus $plugin ) {
